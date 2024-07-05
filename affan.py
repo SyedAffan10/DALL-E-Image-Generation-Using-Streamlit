@@ -6,7 +6,7 @@ import requests
 from io import BytesIO
 from PIL import Image
 import base64
-from streamlit_authenticator import Authenticate  # Assuming you have this set up
+import streamlit_authenticator as stauth
 import pandas as pd
 import secrets
 
@@ -30,59 +30,48 @@ credentials = {
 cookie_key = secrets.token_hex(16)
 
 # Create an authenticator object
-authenticator = Authenticate(
+authenticator = stauth.Authenticate(
     credentials=credentials,
     cookie_name="dalle_app",
     cookie_key=cookie_key,
     cookie_expiry_days=30
 )
 
-# Function to encode image as base64
-def encode_image(image_file):
-    buffered = BytesIO()
-    image_file.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-# Function to get image description using OpenAI's model
-def get_image_description(image):
-    base64_image = encode_image(image)
-
-    # Make API call to OpenAI
-    response = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are an expert in describing an image."},
-            {"role": "user", "content": [
-                {"type": "text", "text": "Give me the description of this image."},
-                {"type": "image_url", "image_url": {
-                    "url": f"data:image/png;base64,{base64_image}"}
-                }
-            ]}
-        ],
-        temperature=0.0,
-    )
-
-    description = response.choices[0].message.content
-    return description
-
-# Load the request log or create new if not exists
-request_log_file = "request_log.csv"
-if os.path.exists(request_log_file):
-    request_log = pd.read_csv(request_log_file)
-else:
-    request_log = pd.DataFrame(columns=["username", "email", "prompt", "image_url", "timestamp"])
-
-# Main Streamlit app
-st.title("DALL-E Image Generation")
-
 # Authentication
 name, authentication_status, username = authenticator.login()
 
 if authentication_status:
-    st.write(f"Welcome {name}")
+    st.title(f"Welcome {name}")
 
+    # Admin view: Show request log and search functionality
+    if username == "admin":
+        st.write("Admin Panel: Request Log")
+
+        # Load the request log
+        if os.path.exists("request_log.csv"):
+            request_log = pd.read_csv("request_log.csv")
+            
+            # Inputs for search
+            search_username = st.text_input("Search by Username")
+            search_date = st.date_input("Search by Date")
+            
+            # Filter the log based on inputs
+            if search_username or search_date:
+                if search_username:
+                    request_log = request_log[request_log["username"].str.contains(search_username, case=False, na=False)]
+                if search_date:
+                    request_log = request_log[pd.to_datetime(request_log["timestamp"]).dt.date == search_date]
+            
+            # Display the filtered log
+            st.dataframe(request_log)
+            
+            # Display the count of requests
+            st.write(f"Total requests: {request_log.shape[0]}")
+        else:
+            st.write("No logs available.")
+    
     # Regular user view: Generate image
-    if username != "admin":
+    else:
         st.write("Enter a prompt to generate an image:")
 
         # Input for the prompt
@@ -91,9 +80,42 @@ if authentication_status:
         # Input for the image
         uploaded_image = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
+        # Function to encode image as base64
+        def encode_image(image_file):
+            buffered = BytesIO()
+            image_file.save(buffered, format="PNG")
+            return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+        # Function to get image description using OpenAI's model
+        def get_image_description(image):
+            base64_image = encode_image(image)
+
+            # Make API call to OpenAI
+            response = openai.chat.completions.create(
+                model="gpt-4.",
+                messages=[
+                    {"role": "system", "content": "You are an expert in describing an image."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "Give me the description of this image."},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}"}
+                        }
+                    ]}
+                ],
+                temperature=0.0,
+            )
+
+            description = response.choices[0].message.content
+            return description
+
+        # Load the request log
+        if os.path.exists("request_log.csv"):
+            request_log = pd.read_csv("request_log.csv")
+        else:
+            request_log = pd.DataFrame(columns=["username", "email", "prompt", "timestamp", "image_base64"])
+
         # Button to submit the prompt
-        generate_button_key = "generate_button"
-        if st.button("Generate Image", key=generate_button_key):
+        if st.button("Generate Image"):
             if prompt:
                 with st.spinner("Generating image..."):
                     try:
@@ -117,47 +139,41 @@ if authentication_status:
                         # Display the generated image
                         st.image(image_url, caption="Generated Image", use_column_width=True)
 
+                        # Download the image
+                        image_response = requests.get(image_url)
+                        image_data = BytesIO(image_response.content)
+
+                        # Encode the image as base64
+                        image_base64 = base64.b64encode(image_data.getvalue()).decode("utf-8")
+
+                        # Add a save button to download the image
+                        st.download_button(
+                            label="Save Image",
+                            data=image_data,
+                            file_name="generated_image.png",
+                            mime="image/png"
+                        )
+
                         # Log the request
                         new_entry = pd.DataFrame([{
                             "username": username,
                             "email": credentials["usernames"][username]["email"],
                             "prompt": prompt,
-                            "image_url": image_url,
-                            "timestamp": pd.Timestamp.now()
+                            "timestamp": pd.Timestamp.now(),
+                            "image_base64": image_base64
                         }])
                         request_log = pd.concat([request_log, new_entry], ignore_index=True)
-
-                        # Save to CSV
-                        request_log.to_csv(request_log_file, index=False)
+                        request_log.to_csv("request_log.csv", index=False)
 
                     except Exception as e:
                         st.error(f"An error occurred: {e}")
             else:
                 st.error("Please enter a prompt.")
 
-    else:
-        st.write("Admin Panel: Request Log")
+elif authentication_status == False:
+    st.error("Username/password is incorrect")
 
-        # Inputs for search
-        search_username = st.text_input("Search by Username")
-        search_date = st.date_input("Search by Date")
+elif authentication_status == None:
+    st.warning("Please enter your username and password")
 
-        # Filter the log based on inputs
-        if search_username or search_date:
-            filtered_log = request_log.copy()
-            if search_username:
-                filtered_log = filtered_log[filtered_log["username"].str.contains(search_username, case=False, na=False)]
-            if search_date:
-                filtered_log = filtered_log[pd.to_datetime(filtered_log["timestamp"]).dt.date == search_date]
-
-            # Display the filtered log
-            st.dataframe(filtered_log)
-
-            # Display the count of requests
-            st.write(f"Total requests: {filtered_log.shape[0]}")
-
-        # Logout button
-        logout_button_key = "logout_button"
-        if st.button("Logout", key=logout_button_key):
-            authenticator.logout()
-
+authenticator.logout("Logout", "sidebar")
