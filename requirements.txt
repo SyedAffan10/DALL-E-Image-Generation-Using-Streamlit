@@ -233,7 +233,6 @@ python-magic==0.4.27
 python-multipart==0.0.9
 pytz==2023.3.post1
 pytz-deprecation-shim==0.1.0.post0
-pywin32==306
 pywinpty==2.0.13
 PyYAML==6.0.1
 pyzmq==25.1.1
