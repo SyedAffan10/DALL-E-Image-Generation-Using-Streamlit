@@ -43,32 +43,41 @@ name, authentication_status, username = authenticator.login()
 if authentication_status:
     st.title(f"Welcome {name}")
 
+    # Load the request log
+    if os.path.exists("request_log.csv"):
+        request_log = pd.read_csv("request_log.csv")
+    else:
+        request_log = pd.DataFrame(columns=["username", "email", "prompt", "timestamp", "image_base64"])
+
+    # Display user history in the sidebar
+    user_history = request_log[request_log["username"] == username]
+
+    st.sidebar.title("Your History")
+    for index, row in user_history.iterrows():
+        st.sidebar.write(f"Prompt: {row['prompt']}")
+        image_data = base64.b64decode(row["image_base64"])
+        st.sidebar.image(Image.open(BytesIO(image_data)), use_column_width=True)
+
     # Admin view: Show request log and search functionality
     if username == "admin":
         st.write("Admin Panel: Request Log")
 
-        # Load the request log
-        if os.path.exists("request_log.csv"):
-            request_log = pd.read_csv("request_log.csv")
-            
-            # Inputs for search
-            search_username = st.text_input("Search by Username")
-            search_date = st.date_input("Search by Date")
-            
-            # Filter the log based on inputs
-            if search_username or search_date:
-                if search_username:
-                    request_log = request_log[request_log["username"].str.contains(search_username, case=False, na=False)]
-                if search_date:
-                    request_log = request_log[pd.to_datetime(request_log["timestamp"]).dt.date == search_date]
-            
-            # Display the filtered log
-            st.dataframe(request_log)
-            
-            # Display the count of requests
-            st.write(f"Total requests: {request_log.shape[0]}")
-        else:
-            st.write("No logs available.")
+        # Inputs for search
+        search_username = st.text_input("Search by Username")
+        search_date = st.date_input("Search by Date")
+        
+        # Filter the log based on inputs
+        if search_username or search_date:
+            if search_username:
+                request_log = request_log[request_log["username"].str.contains(search_username, case=False, na=False)]
+            if search_date:
+                request_log = request_log[pd.to_datetime(request_log["timestamp"]).dt.date == search_date]
+        
+        # Display the filtered log
+        st.dataframe(request_log)
+        
+        # Display the count of requests
+        st.write(f"Total requests: {request_log.shape[0]}")
     
     # Regular user view: Generate image
     else:
@@ -92,27 +101,21 @@ if authentication_status:
 
             # Make API call to OpenAI
             response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert in describing an image."},
-                {"role": "user", "content": [
-                    {"type": "text", "text": "Give me the description of this image."},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:image/png;base64,{base64_image}"}
-                    }
-                ]}
-            ],
-            temperature=0.0,
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert in describing an image."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "Give me the description of this image."},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}"}
+                        }
+                    ]}
+                ],
+                temperature=0.0,
             )
 
             description = response.choices[0].message.content
             return description
-
-        # Load the request log
-        if os.path.exists("request_log.csv"):
-            request_log = pd.read_csv("request_log.csv")
-        else:
-            request_log = pd.DataFrame(columns=["username", "email", "prompt", "timestamp"])
 
         # Button to submit the prompt
         if st.button("Generate Image"):
@@ -143,6 +146,9 @@ if authentication_status:
                         image_response = requests.get(image_url)
                         image_data = BytesIO(image_response.content)
 
+                        # Encode the image as base64
+                        image_base64 = base64.b64encode(image_data.getvalue()).decode("utf-8")
+
                         # Add a save button to download the image
                         st.download_button(
                             label="Save Image",
@@ -156,7 +162,8 @@ if authentication_status:
                             "username": username,
                             "email": credentials["usernames"][username]["email"],
                             "prompt": prompt,
-                            "timestamp": pd.Timestamp.now()
+                            "timestamp": pd.Timestamp.now(),
+                            "image_base64": image_base64
                         }])
                         request_log = pd.concat([request_log, new_entry], ignore_index=True)
                         request_log.to_csv("request_log.csv", index=False)
