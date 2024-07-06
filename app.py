@@ -43,6 +43,8 @@ name, authentication_status, username = authenticator.login()
 if authentication_status:
     st.title(f"Welcome {name}")
 
+    authenticator.logout("Logout", "sidebar")
+
     # Load the request log
     if os.path.exists("request_log.csv"):
         request_log = pd.read_csv("request_log.csv")
@@ -142,20 +144,10 @@ if authentication_status:
                         # Display the generated image
                         st.image(image_url, caption="Generated Image", use_column_width=True)
 
-                        # Download the image
+                        # Fetch the image from URL for logging
                         image_response = requests.get(image_url)
                         image_data = BytesIO(image_response.content)
-
-                        # Encode the image as base64
                         image_base64 = base64.b64encode(image_data.getvalue()).decode("utf-8")
-
-                        # Add a save button to download the image
-                        st.download_button(
-                            label="Save Image",
-                            data=image_data,
-                            file_name="generated_image.png",
-                            mime="image/png"
-                        )
 
                         # Log the request
                         new_entry = pd.DataFrame([{
@@ -168,10 +160,14 @@ if authentication_status:
                         request_log = pd.concat([request_log, new_entry], ignore_index=True)
                         request_log.to_csv("request_log.csv", index=False)
 
+                        # Update the history in the sidebar
+                        user_history = request_log[request_log["username"] == username]
+                        
                     except Exception as e:
                         st.error(f"An error occurred: {e}")
             else:
                 st.error("Please enter a prompt.")
+
 
 elif authentication_status == False:
     st.error("Username/password is incorrect")
@@ -179,4 +175,3 @@ elif authentication_status == False:
 elif authentication_status == None:
     st.warning("Please enter your username and password")
 
-authenticator.logout("Logout", "sidebar")
