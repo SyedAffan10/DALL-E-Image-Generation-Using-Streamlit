@@ -163,15 +163,21 @@ if authentication_status:
                         # Update the history in the sidebar
                         user_history = request_log[request_log["username"] == username]
                         
+                        # Add a download button for the generated image
+                        st.download_button(
+                            label="Download Image",
+                            data=image_data.getvalue(),
+                            file_name="generated_image.png",
+                            mime="image/png"
+                        )
+                        
                     except Exception as e:
                         st.error(f"An error occurred: {e}")
             else:
                 st.error("Please enter a prompt.")
-
 
 elif authentication_status == False:
     st.error("Username/password is incorrect")
 
 elif authentication_status == None:
     st.warning("Please enter your username and password")
-
